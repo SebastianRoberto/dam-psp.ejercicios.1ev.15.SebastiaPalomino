@@ -1,10 +1,12 @@
 package main
 
 import (
+    "bufio"
     "fmt"
-    "io/ioutil"
     "os"
+    "os/exec"
     "strings"
+    "sync"
 )
 
 type Resultado struct {
@@ -13,14 +15,37 @@ type Resultado struct {
 }
 
 func contarLetra(nombreArchivo string, letra string, ch chan<- Resultado) {
-    contenido, err := ioutil.ReadFile(nombreArchivo)
+    cmd := exec.Command("grep", "-oi", letra, nombreArchivo)
+    output, err := cmd.StdoutPipe()
     if err != nil {
-        ch <- Resultado{nombreArchivo, -1} // Usamos -1 para indicar un error
+        ch <- Resultado{nombreArchivo, -1}
         return
     }
-    texto := string(contenido)
-    cuenta := strings.Count(strings.ToLower(texto), strings.ToLower(letra))
-    ch <- Resultado{nombreArchivo, cuenta}
+
+    if err := cmd.Start(); err != nil {
+        ch <- Resultado{nombreArchivo, -1}
+        return
+    }
+
+    scanner := bufio.NewScanner(output)
+    count := 0
+    for scanner.Scan() {
+        count++
+    }
+
+    if err := cmd.Wait(); err != nil {
+        if exitErr, ok := err.(*exec.ExitError); ok {
+            if exitErr.ExitCode() != 1 {
+                ch <- Resultado{nombreArchivo, -1}
+                return
+            }
+        } else {
+            ch <- Resultado{nombreArchivo, -1}
+            return
+        }
+    }
+
+    ch <- Resultado{nombreArchivo, count}
 }
 
 func main() {
@@ -29,35 +54,37 @@ func main() {
         return
     }
 
-    letra := os.Args[1]
+    letra := strings.ToLower(os.Args[1])
     if len(letra) != 1 {
         fmt.Println("Por favor, ingrese una sola letra como primer argumento.")
         return
     }
 
     ch := make(chan Resultado)
+    var wg sync.WaitGroup
     total := 0
 
     for _, nombreArchivo := range os.Args[2:] {
-        go contarLetra(nombreArchivo, letra, ch)
+        wg.Add(1)
+        go func(archivo string) {
+            defer wg.Done()
+            contarLetra(archivo, letra, ch)
+        }(nombreArchivo)
     }
 
-    resultados := make([]Resultado, len(os.Args[2:]))
-    for i := range os.Args[2:] {
-        resultados[i] = <-ch
-    }
-    close(ch)
+    go func() {
+        wg.Wait()
+        close(ch)
+    }()
 
-    for _, res := range resultados {
-        if res.cuenta == -1 {
-            fmt.Printf("Error al abrir el archivo: %s\n", res.nombreArchivo)
+    for resultado := range ch {
+        if resultado.cuenta == -1 {
+            fmt.Printf("Error al procesar el archivo: %s\n", resultado.nombreArchivo)
         } else {
-            total += res.cuenta
-            fmt.Printf("La letra '%s' aparece %d veces en el archivo %s.\n", letra, res.cuenta, res.nombreArchivo)
+            total += resultado.cuenta
+            fmt.Printf("La letra '%s' aparece %d veces en el archivo %s.\n", letra, resultado.cuenta, resultado.nombreArchivo)
         }
     }
 
     fmt.Printf("Total de apariciones de la letra '%s': %d\n", letra, total)
 }
-
-
