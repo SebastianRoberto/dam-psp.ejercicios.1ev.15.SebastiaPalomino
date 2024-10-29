@@ -7,19 +7,19 @@ import (
     "strings"
 )
 
-func contarLetraA(nombreArchivo string, ch chan<- int) {
+func contarLetra(nombreArchivo string, letra string, ch chan<- int) {
     contenido, err := ioutil.ReadFile(nombreArchivo)
     if err != nil {
         ch <- 0
         return
     }
     texto := string(contenido)
-    cuenta := strings.Count(texto, "a") + strings.Count(texto, "A")
+    cuenta := strings.Count(texto, letra) + strings.Count(texto, strings.ToUpper(letra))
     ch <- cuenta
 }
 
 func main() {
-    if len(os.Args) < 2 {
+    if len(os.Args) < 3 {
         fmt.Println("Uso: go run main.go <letra> <nombreArchivo1> <nombreArchivo2> ...")
         return
     }
@@ -29,7 +29,7 @@ func main() {
     total := 0
 
     for _, nombreArchivo := range os.Args[2:] {
-        go contarLetraA(nombreArchivo, ch)
+        go contarLetra(nombreArchivo, letra, ch)
     }
 
     for range os.Args[2:] {
