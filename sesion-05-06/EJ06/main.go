@@ -7,16 +7,20 @@ import (
     "strings"
 )
 
-func contarLetra(nombreArchivo string, letra string, ch chan<- int) {
+type Resultado struct {
+    nombreArchivo string
+    cuenta        int
+}
+
+func contarLetra(nombreArchivo string, letra string, ch chan<- Resultado) {
     contenido, err := ioutil.ReadFile(nombreArchivo)
     if err != nil {
-        ch <- -1 // Usamos -1 para indicar un error
+        ch <- Resultado{nombreArchivo, -1} // Usamos -1 para indicar un error
         return
     }
-    texto := strings.ToLower(string(contenido))
-    letraBuscada := strings.ToLower(letra)
-    cuenta := strings.Count(texto, letraBuscada)
-    ch <- cuenta
+    texto := string(contenido)
+    cuenta := strings.Count(strings.ToLower(texto), strings.ToLower(letra))
+    ch <- Resultado{nombreArchivo, cuenta}
 }
 
 func main() {
@@ -31,29 +35,29 @@ func main() {
         return
     }
 
-    ch := make(chan int)
+    ch := make(chan Resultado)
     total := 0
 
     for _, nombreArchivo := range os.Args[2:] {
         go contarLetra(nombreArchivo, letra, ch)
     }
 
-    for i, nombreArchivo := range os.Args[2:] {
-        cuenta := <-ch
-        if cuenta == -1 {
-            fmt.Printf("Error al abrir el archivo: %s\n", nombreArchivo)
+    resultados := make([]Resultado, len(os.Args[2:]))
+    for i := range os.Args[2:] {
+        resultados[i] = <-ch
+    }
+    close(ch)
+
+    for _, res := range resultados {
+        if res.cuenta == -1 {
+            fmt.Printf("Error al abrir el archivo: %s\n", res.nombreArchivo)
         } else {
-            total += cuenta
-            fmt.Printf("La letra '%s' aparece %d veces en el archivo %s.\n", letra, cuenta, nombreArchivo)
-        }
-        
-        if i == len(os.Args[2:])-1 {
-            close(ch)
+            total += res.cuenta
+            fmt.Printf("La letra '%s' aparece %d veces en el archivo %s.\n", letra, res.cuenta, res.nombreArchivo)
         }
     }
 
     fmt.Printf("Total de apariciones de la letra '%s': %d\n", letra, total)
 }
-
 
 
